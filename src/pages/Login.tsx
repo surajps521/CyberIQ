@@ -235,6 +235,48 @@ export default function Login() {
             Authorized personnel only. All access is monitored and logged.
           </p>
         </div>
+
+        <div style={{ display: "flex", justifyContent: "center", marginTop: "18px" }}>
+          <button
+            type="button"
+            onClick={() => router.push("/access")}
+            aria-label="Open CRIMEIQ options"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "10px",
+              border: "1px solid rgba(6, 182, 212, 0.25)",
+              background: "rgba(15, 23, 42, 0.8)",
+              color: "white",
+              borderRadius: "999px",
+              padding: "10px 16px 10px 12px",
+              cursor: "pointer",
+              boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+              backdropFilter: "blur(18px)",
+              transition: "transform 0.2s ease, border-color 0.2s ease",
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.transform = "translateY(-1px)"
+              e.currentTarget.style.borderColor = "rgba(6, 182, 212, 0.6)"
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.transform = "translateY(0)"
+              e.currentTarget.style.borderColor = "rgba(6, 182, 212, 0.25)"
+            }}
+          >
+            <img
+              src="/favicon.svg"
+              alt="CRIMEIQ icon"
+              width={22}
+              height={22}
+              style={{ display: "block" }}
+            />
+            <span style={{ fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+              Open CRIMEIQ Options
+            </span>
+          </button>
+        </div>
       </motion.div>
 
       <style>{`

@@ -1,5 +1,31 @@
 import * as React from "react";
-import { Drawer as DrawerPrimitive } from "vaul";
+// Fallback for `vaul` Drawer primitive when the package isn't available.
+const DrawerPrimitive: any = {
+  Root: (props: any) => <div {...props} />,
+  Trigger: (props: any) => <button {...props} />,
+  Portal: (props: any) => <div {...props} />,
+  Close: (props: any) => <button {...props} />,
+  Overlay: React.forwardRef<HTMLDivElement, any>(({ children, ...props }: any, ref) => (
+    <div ref={ref} {...props}>
+      {children}
+    </div>
+  )),
+  Content: React.forwardRef<HTMLDivElement, any>(({ children, ...props }: any, ref) => (
+    <div ref={ref} {...props}>
+      {children}
+    </div>
+  )),
+  Title: React.forwardRef<HTMLDivElement, any>(({ children, ...props }: any, ref) => (
+    <div ref={ref} {...props}>
+      {children}
+    </div>
+  )),
+  Description: React.forwardRef<HTMLDivElement, any>(({ children, ...props }: any, ref) => (
+    <div ref={ref} {...props}>
+      {children}
+    </div>
+  )),
+};
 
 import { cn } from "@/lib/utils";
 

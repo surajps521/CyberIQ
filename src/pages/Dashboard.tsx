@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Search, FileText, Network, Map, BarChart3, Bell,
-  Mic, Send, Languages, ChevronRight, User, Shield,
+  Mic, Send, Languages, ChevronRight, User, Shield, AlertTriangle, Phone, Mail,
   Clock, X, Menu, MessageSquare, LogOut
 } from "lucide-react"
 import KSPLogo from "@/components/KSPLogo"
@@ -30,6 +30,11 @@ const quickActions = [
   { icon: BarChart3, label: "Analytics", route: "/analytics" },
 ]
 
+const emergencyContact = {
+  phone: "7204770326",
+  email: "12bhavish@gmail.com",
+}
+
 export default function Dashboard() {
   const router = useRouter()
   const { messages, isTyping, connected, connect, sendMessage } = useChat()
@@ -39,6 +44,7 @@ export default function Dashboard() {
   const [language, setLanguage] = useState<"en" | "kn">("en")
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
+  const [checkingEmailHealth, setCheckingEmailHealth] = useState(false)
   const [user, setUser] = useState<any>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -58,9 +64,106 @@ export default function Dashboard() {
     setInput("")
   }
 
+  const handleSOS = async () => {
+    const lastUserMessage = [...messages].reverse().find(message => message.type === "user")?.text
+    const messageToResend = input.trim() || lastUserMessage || "Immediate assistance required."
+
+    // Try to get a geolocation position (with short timeout)
+    const getPosition = (): Promise<GeolocationPosition | null> => {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) return resolve(null)
+        const onSuccess = (pos: GeolocationPosition) => resolve(pos)
+        const onErr = () => resolve(null)
+        navigator.geolocation.getCurrentPosition(onSuccess, onErr, { enableHighAccuracy: true, timeout: 7000, maximumAge: 5000 })
+      })
+    }
+
+    const pos = await getPosition()
+    const lat = pos?.coords.latitude
+    const lon = pos?.coords.longitude
+    const acc = pos?.coords.accuracy
+
+    const summaryParts = [
+      "SOS Alert from CrimeIQ",
+      `Officer: ${user?.name || "Inspector Sharma"}`,
+      `Badge: ${user?.badgeId || "KSP-4521"}`,
+      `Contact: ${emergencyContact.phone} / ${emergencyContact.email}`,
+      `Message: ${messageToResend}`,
+    ]
+    if (lat != null && lon != null) {
+      summaryParts.push(`Location: https://maps.google.com/?q=${lat},${lon}`)
+      summaryParts.push(`Coordinates: ${lat},${lon} (±${acc ?? "?"} m)`)
+    }
+    const summary = summaryParts.join("\n")
+
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_HTTP_URL || "http://localhost:8000"
+
+    try {
+      const response = await fetch(`${backendUrl}/sos/alert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          officer_name: user?.name || "Inspector Sharma",
+          badge_id: user?.badgeId || "KSP-4521",
+          message: messageToResend,
+          emergency_phone: emergencyContact.phone,
+          emergency_email: emergencyContact.email,
+          latitude: lat,
+          longitude: lon,
+          location_accuracy_m: acc,
+        }),
+      })
+
+      if (!response.ok) {
+        let detail = "SOS backend request failed"
+        try {
+          const payload = await response.json()
+          if (payload?.detail && typeof payload.detail === "string") {
+            detail = payload.detail
+          }
+        } catch {
+          // ignore
+        }
+        throw new Error(detail)
+      }
+
+      await response.json()
+      window.alert("SOS alert sent to your emergency contact.")
+    } catch (error: any) {
+      const smsUrl = `sms:${emergencyContact.phone}?body=${encodeURIComponent(summary)}`
+      const emailUrl = `mailto:${emergencyContact.email}?subject=${encodeURIComponent("SOS Alert - Immediate Assistance Required")}&body=${encodeURIComponent(summary)}`
+      window.open(smsUrl, "_blank", "noopener,noreferrer")
+      window.open(emailUrl, "_blank", "noopener,noreferrer")
+      window.alert(`Backend alert could not be sent: ${error?.message || error}. Drafted SMS and email instead.`)
+    }
+  }
+
   const handleLogout = () => {
     localStorage.removeItem("ksp_user")
     router.push("/")
+  }
+
+  const handleCheckEmailHealth = async () => {
+    if (checkingEmailHealth) return
+    setCheckingEmailHealth(true)
+
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_HTTP_URL || "http://localhost:8000"
+
+    try {
+      const response = await fetch(`${backendUrl}/sos/email/health`)
+      if (!response.ok) {
+        throw new Error("Could not reach backend email health endpoint")
+      }
+      const result = await response.json()
+      const status = result?.status || "unknown"
+      const detail = result?.detail || "No detail available"
+      window.alert(`Email health: ${status}\n${detail}`)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unknown error"
+      window.alert(`Email health check failed: ${detail}`)
+    } finally {
+      setCheckingEmailHealth(false)
+    }
   }
 
   const c = {
@@ -193,14 +296,6 @@ export default function Dashboard() {
                       code: ({children}) => <code style={{background:"rgba(6,182,212,0.1)",color:"#06B6D4",padding:"1px 6px",borderRadius:"4px",fontSize:"12px"}}>{children}</code>,
                     }}>{msg.text}</ReactMarkdown>
                   </div>
-                  {msg.source && (
-                    <div style={{ display: "flex", gap: "6px", marginTop: "10px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.08)", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "10px", padding: "2px 8px", borderRadius: "20px", background: "rgba(6,182,212,0.15)", color: "#06B6D4" }}>{msg.source}</span>
-                      {msg.confidence && (
-                        <span style={{ fontSize: "10px", padding: "2px 8px", borderRadius: "20px", background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>{msg.confidence}% confidence</span>
-                      )}
-                    </div>
-                  )}
                 </div>
               </motion.div>
             ))}
@@ -239,6 +334,11 @@ export default function Dashboard() {
               style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b", fontSize: "11px", display: "flex", alignItems: "center", gap: "3px", padding: "2px" }}>
               <Languages size={13} />{language === "en" ? "EN" : "ಕನ್ನಡ"}
             </button>
+            <button onClick={handleSOS}
+              title="Send SOS to emergency contact"
+              style={{ background: "linear-gradient(135deg,#dc2626,#b91c1c)", border: "1px solid rgba(248,113,113,0.35)", borderRadius: "8px", padding: "7px 10px", cursor: "pointer", color: "white", display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em" }}>
+              <AlertTriangle size={13} /> SOS
+            </button>
             <button onClick={handleSend}
               style={{ background: "linear-gradient(135deg,#1E3A8A,#06B6D4)", border: "none", borderRadius: "8px", padding: "7px 12px", cursor: "pointer", color: "white", display: "flex", alignItems: "center" }}>
               <Send size={14} />
@@ -255,6 +355,49 @@ export default function Dashboard() {
             <button onClick={() => setRightOpen(false)}
               style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b", display: "flex" }}>
               <X size={14} />
+            </button>
+          </div>
+
+          <div style={{ padding: "14px", background: "linear-gradient(180deg, rgba(220,38,38,0.14), rgba(255,255,255,0.03))", border: "1px solid rgba(248,113,113,0.18)", borderRadius: "10px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
+              <div style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#ef4444" }} />
+              <span style={{ fontSize: "10px", fontWeight: 700, color: "#f87171", letterSpacing: "0.08em" }}>EMERGENCY CONTACT</span>
+            </div>
+            <p style={{ fontSize: "13px", fontWeight: 600, marginBottom: "4px" }}>Preloaded SOS routing</p>
+            <div style={{ display: "grid", gap: "8px", fontSize: "11px", color: "#cbd5e1" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Phone size={13} color="#f87171" />
+                <span>{emergencyContact.phone}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Mail size={13} color="#f87171" />
+                <span>{emergencyContact.email}</span>
+              </div>
+            </div>
+            <button
+              onClick={handleCheckEmailHealth}
+              disabled={checkingEmailHealth}
+              style={{
+                marginTop: "10px",
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "6px",
+                padding: "8px 10px",
+                borderRadius: "8px",
+                border: "1px solid rgba(248,113,113,0.25)",
+                background: checkingEmailHealth ? "rgba(148,163,184,0.2)" : "rgba(220,38,38,0.15)",
+                color: "#fecaca",
+                cursor: checkingEmailHealth ? "not-allowed" : "pointer",
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+              }}
+              title="Test backend SMTP health"
+            >
+              <Mail size={12} />
+              {checkingEmailHealth ? "Checking Email Setup..." : "Test Email Setup"}
             </button>
           </div>
 

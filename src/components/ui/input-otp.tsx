@@ -1,5 +1,14 @@
 import * as React from "react";
-import { OTPInput, OTPInputContext } from "input-otp";
+// Fallback for `input-otp` when the package isn't installed.
+const OTPInputContext = React.createContext<any>({
+  slots: Array.from({ length: 6 }).map(() => ({ char: "", hasFakeCaret: false, isActive: false })),
+});
+
+const OTPInput = React.forwardRef<any, any>(({ containerClassName, className, ...props }, ref) => (
+  <div className={containerClassName}>
+    <input ref={ref} className={className} {...props} />
+  </div>
+));
 import { Dot } from "lucide-react";
 
 import { cn } from "@/lib/utils";
