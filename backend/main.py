@@ -15,8 +15,8 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'), override=True)
 
-from mock_db import DISTRICT_ALIASES, MOCK_CASES, MOCK_CRIMINALS
-from services.archive_loader import load_archive_crime_rows
+from .mock_db import DISTRICT_ALIASES, MOCK_CASES, MOCK_CRIMINALS
+from .services.archive_loader import load_archive_crime_rows
 
 app = FastAPI(title="KSP CrimeIQ API")
 app.add_middleware(
