@@ -51,7 +51,8 @@ export default function GuidancePage() {
           <div style={{ display: "flex", justifyContent: "center" }}>
             <button
               type="button"
-              onClick={() => router.push("/dashboard")}
+onClick={() => router.push("/access/guidance/threat")}
+
               style={{
                 border: "1px solid rgba(6, 182, 212, 0.25)",
                 background: "linear-gradient(135deg, #1E3A8A, #06B6D4)",
@@ -68,7 +69,7 @@ export default function GuidancePage() {
                 gap: "8px",
               }}
             >
-              <ArrowLeft size={16} /> Back to dashboard
+              <ArrowLeft size={16} /> Threat guidance
             </button>
           </div>
         </div>

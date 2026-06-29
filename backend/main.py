@@ -3,9 +3,10 @@ from email.message import EmailMessage
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Any
 import base64
 import json, os
+
 import smtplib
 import ssl
 from urllib.parse import urlencode
@@ -14,8 +15,8 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'), override=True)
 
-from mock_db import DISTRICT_ALIASES, MOCK_CASES, MOCK_CRIMINALS
-from services.archive_loader import load_archive_crime_rows
+from .mock_db import DISTRICT_ALIASES, MOCK_CASES, MOCK_CRIMINALS
+from .services.archive_loader import load_archive_crime_rows
 
 app = FastAPI(title="KSP CrimeIQ API")
 app.add_middleware(
@@ -535,3 +536,137 @@ def get_stats():
         "by_district": dict(Counter(c["district"] for c in MOCK_CASES).most_common(5)),
         "by_status": dict(Counter(c["status"] for c in MOCK_CASES)),
     }
+
+
+# ---------------------------
+# Evidence capture endpoints
+# ---------------------------
+
+from fastapi import Depends, UploadFile, File
+from fastapi.security import HTTPAuthorizationCredentials
+from fastapi import status
+from datetime import datetime, timezone
+import uuid
+import hashlib
+
+from .evidence.auth_jwt import jwt_auth
+from .services.evidence_storage import LocalDiskEvidenceStorage
+from .services.evidence_repo import MongoEvidenceRepository, EvidenceMetadata
+from .evidence.evidence_utils import validate_image_meta, sha256_bytes, generate_evidence_id
+
+
+class TokenRequest(BaseModel):
+    badge_id: str
+    password: str
+    role: Optional[str] = None
+
+
+class EvidenceUploadResponse(BaseModel):
+    evidenceId: str
+    imageUrlOrPath: str
+    latitude: float
+    longitude: float
+    uploadTime: datetime
+    uploadedBy: str
+    sha256ImageHash: str
+    status: str
+
+
+def _extract_user_from_token(cred: HTTPAuthorizationCredentials) -> dict:
+    return jwt_auth.decode_credentials(cred)
+
+
+@app.post("/auth/token")
+def issue_token(payload: TokenRequest):
+    """Issue JWT for authenticated users.
+
+    Note: Frontend currently uses hardcoded demo credentials.
+    This endpoint validates badge_id/password against the same demo set in frontend.
+    """
+    # Keep in sync with frontend Login.tsx VALID_USERS
+    valid_users = {
+        ("KSP001", "inspector123"): {"user_id": "KSP001", "name": "Inspector Sharma", "role": "inspector", "uploadedBy": "Inspector Sharma"},
+        ("KSP002", "constable123"): {"user_id": "KSP002", "name": "Constable Ravi", "role": "constable", "uploadedBy": "Constable Ravi"},
+        ("KSP003", "commissioner123"): {"user_id": "KSP003", "name": "Commissioner Patil", "role": "commissioner", "uploadedBy": "Commissioner Patil"},
+        ("admin", "admin123"): {"user_id": "admin", "name": "Admin User", "role": "inspector", "uploadedBy": "Admin User"},
+    }
+
+    key = (payload.badge_id, payload.password)
+    user = valid_users.get(key)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    token = jwt_auth.create_token(user_id=user["user_id"], uploaded_by=user["uploadedBy"], role=payload.role or user.get("role"))
+    return {"accessToken": token, "tokenType": "Bearer"}
+
+
+@app.post("/evidence/upload", response_model=EvidenceUploadResponse)
+async def upload_evidence(
+    file: UploadFile = File(...),
+    latitude: float = 0.0,
+    longitude: float = 0.0,
+    # If you prefer client uploadTime you can accept it, but server-side is safer.
+    auth: Optional[HTTPAuthorizationCredentials] = Depends(jwt_auth.bearer),
+):
+    if auth is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Authorization header")
+
+    decoded = _extract_user_from_token(auth)
+    uploaded_by = decoded.get("uploadedBy") or str(decoded.get("sub"))
+
+    # Validate + read bytes
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Missing file name")
+
+    MAX_BYTES = int(os.getenv("EVIDENCE_MAX_BYTES", "10000000"))  # 10MB default
+    content = await file.read()
+    if len(content) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"File too large. Max allowed is {MAX_BYTES} bytes")
+
+    try:
+        image_extension, _mime = validate_image_meta(file.filename, file.content_type)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    sha256_hash = sha256_bytes(content)
+    evidence_id = generate_evidence_id()
+    image_storage = LocalDiskEvidenceStorage()
+
+    stored = image_storage.save_image_bytes(
+        evidence_id=evidence_id,
+        image_bytes=content,
+        image_extension=image_extension,
+    )
+
+    # Store metadata in MongoDB
+    repo = MongoEvidenceRepository()
+    meta = EvidenceMetadata(
+        evidence_id=evidence_id,
+        image_url_or_path=stored.url_or_path,
+        uploaded_by=uploaded_by,
+        upload_time=datetime.now(timezone.utc),
+        latitude=latitude,
+        longitude=longitude,
+        sha256_image_hash=sha256_hash,
+        status="Pending",
+    )
+
+    repo.insert(meta=meta)
+
+    # Cleanup temp memory: nothing persisted besides storage
+    return EvidenceUploadResponse(
+        evidenceId=evidence_id,
+        imageUrlOrPath=stored.url_or_path,
+        latitude=latitude,
+        longitude=longitude,
+        uploadTime=meta.upload_time,
+        uploadedBy=uploaded_by,
+        sha256ImageHash=sha256_hash,
+        status=meta.status,
+    )
+
+
+# Best-effort cleanup hook for FastAPI workers.
+# (LocalDiskEvidenceStorage writes directly to final location; no temp files are created intentionally.)
+
+

@@ -24,7 +24,8 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
+
     e.preventDefault()
     setError("")
 
@@ -43,9 +44,44 @@ export default function Login() {
     }
 
     setIsLoading(true)
-    // Save user to localStorage for dashboard
-    localStorage.setItem("ksp_user", JSON.stringify(user))
+
+    try {
+      // Save user to localStorage for dashboard
+      localStorage.setItem("ksp_user", JSON.stringify(user))
+
+      // Request JWT from backend so Evidence uploads are protected
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_HTTP_URL || "http://localhost:8000"
+      const res = await fetch(`${backendUrl}/auth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          badge_id: user.badgeId,
+          password: password,
+          role: user.role,
+        }),
+      })
+
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "")
+        throw new Error(detail || "Failed to obtain authentication token")
+      }
+
+      const data = await res.json()
+      if (data?.accessToken) {
+        localStorage.setItem("ksp_jwt", data.accessToken)
+        // Also expose the current user id for later use (Evidence upload)
+        localStorage.setItem("ksp_user_id", user.badgeId)
+      } else {
+        throw new Error("Backend did not return accessToken")
+      }
+    } catch (e: any) {
+      // Keep UI working, but show a visible message for debugging.
+      setError(e?.message ? `Auth token error: ${e.message}` : "Auth token error")
+    }
+
     setTimeout(() => router.push("/dashboard"), 1000)
+
+
   }
 
   return (
