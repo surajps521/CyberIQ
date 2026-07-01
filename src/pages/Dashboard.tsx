@@ -96,7 +96,7 @@ export default function Dashboard() {
     }
     const summary = summaryParts.join("\n")
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_HTTP_URL || "http://localhost:8000"
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_HTTP_URL || "https://cyberiq-3hwj.onrender.com"
 
     try {
       const response = await fetch(`${backendUrl}/sos/alert`, {

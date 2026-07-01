@@ -22,7 +22,7 @@ export function useChat() {
 
     const getWebSocketUrl = () => {
         if (typeof window === "undefined") {
-            return "ws://localhost:8000/ws/chat"
+            return "wss://cyberiq-3hwj.onrender.com/ws/chat"
         }
 
         const envUrl = process.env.NEXT_PUBLIC_BACKEND_WS_URL

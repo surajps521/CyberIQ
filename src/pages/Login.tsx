@@ -50,7 +50,7 @@ export default function Login() {
       localStorage.setItem("ksp_user", JSON.stringify(user))
 
       // Request JWT from backend so Evidence uploads are protected
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_HTTP_URL || "http://localhost:8000"
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_HTTP_URL || "https://cyberiq-3hwj.onrender.com"
       const res = await fetch(`${backendUrl}/auth/token`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
